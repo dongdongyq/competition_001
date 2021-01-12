@@ -7,148 +7,86 @@ import os
 import torch
 import cv2
 import numpy as np
-import numbers
-from PIL import Image
-from collections.abc import Sequence
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-from torchvision.transforms import functional as F
 
-
-def _setup_size(size, error_msg):
-    if isinstance(size, numbers.Number):
-        return int(size), int(size)
-
-    if isinstance(size, Sequence) and len(size) == 1:
-        return size[0], size[0]
-
-    if len(size) != 2:
-        raise ValueError(error_msg)
-
-    return size
-
-
-class MyCrop(torch.nn.Module):
-    @staticmethod
-    def get_params(img, center, output_size):
-        """Get parameters for ``crop`` for a random crop.
-
-        Args:
-            img (PIL Image or Tensor): Image to be cropped.
-            output_size (tuple): Expected output size of the crop.
-
-        Returns:
-            tuple: params (i, j, h, w) to be passed to ``crop`` for random crop.
-        """
-        w, h = F._get_image_size(img)
-        th, tw = output_size
-
-        if h + 1 < th or w + 1 < tw:
-            raise ValueError(
-                "Required crop size {} is larger then input image size {}".format((th, tw), (h, w))
-            )
-
-        if w == tw and h == th:
-            return 0, 0, h, w
-
-        i = center[1] - th // 2
-        j = center[0] - tw // 2
-
-        return i, j, th, tw
-
-    def __init__(self, center, size, padding=None, pad_if_needed=False, fill=0, padding_mode="constant"):
-        super().__init__()
-
-        self.size = tuple(_setup_size(
-            size, error_msg="Please provide only two dimensions (h, w) for size."
-        ))
-        self.center = tuple(_setup_size(
-            center, error_msg="Please provide only two dimensions (x, y) for size."
-        ))
-
-        self.padding = padding
-        self.pad_if_needed = pad_if_needed
-        self.fill = fill
-        self.padding_mode = padding_mode
-
-    def forward(self, img):
-        """
-        Args:
-            img (PIL Image or Tensor): Image to be cropped.
-
-        Returns:
-            PIL Image or Tensor: Cropped image.
-        """
-        if self.padding is not None:
-            img = F.pad(img, self.padding, self.fill, self.padding_mode)
-
-        width, height = F._get_image_size(img)
-        # pad the width if needed
-        if self.pad_if_needed and width < self.size[1]:
-            padding = [self.size[1] - width, 0]
-            img = F.pad(img, padding, self.fill, self.padding_mode)
-        # pad the height if needed
-        if self.pad_if_needed and height < self.size[0]:
-            padding = [0, self.size[0] - height]
-            img = F.pad(img, padding, self.fill, self.padding_mode)
-
-        i, j, h, w = self.get_params(img, self.center, self.size)
-
-        return F.crop(img, i, j, h, w)
-
-    def __repr__(self):
-        return self.__class__.__name__ + "(size={0}, padding={1})".format(self.size, self.padding)
+from utils import check_or_make_dir
 
 
 class MyDataset(Dataset):
-    def __init__(self, root_dir, transform=None, target_transform=None):
+    def __init__(self, root_dir, is_train=True, max_len=None, transform=None, target_transform=None):
         """
         Args:
             root_dir (string): Directory with all the images.
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        train_imgs_dir = os.path.join(root_dir, "train_imgs")
-        train_labels_dir = os.path.join(root_dir, "train_labels")
-        image_files_list = os.listdir(train_imgs_dir)
-        label_files_list = os.listdir(train_labels_dir)
-        assert len(image_files_list) == len(label_files_list)
-        self.images_list = [os.path.join(train_imgs_dir, file) for file in image_files_list]
-        self.labels_list = [os.path.join(train_labels_dir, file) for file in label_files_list]
+        images_dir = check_or_make_dir(root_dir, "images")
+        labels_dir = check_or_make_dir(root_dir, "labels")
+        if is_train:
+            dir_name = "train"
+        else:
+            dir_name = "val"
+        self.images_dir_path = check_or_make_dir(images_dir, dir_name)
+        self.labels_dir_path = check_or_make_dir(labels_dir, dir_name)
+
+        self.images_name = os.listdir(self.images_dir_path)
+        self.max_len = max_len
         self.transform = transform
         self.target_transform = target_transform
 
     def __len__(self):
-        return len(self.images_list)
+        if self.max_len is not None:
+            return min(len(self.images_name), self.max_len)
+        return len(self.images_name)
+
+    def get_image(self, idx):
+        image_path = check_or_make_dir(self.images_dir_path, self.images_name[idx])
+        img = cv2.imread(image_path)
+        return img
+
+    def get_label(self, idx):
+        boxes = []
+        masks = []
+        categorys = []
+        label_path = check_or_make_dir(self.labels_dir_path, self.images_name[idx].split(".")[0]+".txt")
+        with open(label_path, "r") as fp:
+            for line in fp.readlines():
+                if line.strip():
+                    line = line.replace("\n", "").split(" ")
+                    boxes.append(line[1:])
+                    masks.append(line[1:])
+                    categorys.append(line[0])
+        labs = {
+            "boxes": torch.tensor(np.array(boxes, dtype=np.float), dtype=torch.float),
+            "masks": torch.tensor(np.array(masks, dtype=np.float), dtype=torch.float),
+            "categorys": torch.tensor(np.array(categorys, dtype=np.int), dtype=torch.int),
+            "image_id": idx,
+        }
+        return labs
+
+    def get_label_mask(self, img, labels):
+        size = img.shape[:2]
+        label_mask = np.zeros(size, dtype=np.uint8)
+        size = torch.tensor(size[::-1])
+        masks = labels["masks"]
+        for mask in masks:
+            center = mask[:2] * size
+            wh = mask[2:] * size
+            point_lt = tuple(np.array(center - wh/2, dtype=np.int))
+            point_rb = tuple(np.array(center + wh/2, dtype=np.int))
+            cv2.rectangle(label_mask, point_lt, point_rb, 255, -1)
+        return label_mask
 
     def __getitem__(self, idx):
-        # img = Image.open(self.images_list[idx])
-        # label = Image.open(self.labels_list[idx])
-        img = cv2.imread(self.images_list[idx])
-        # img = cv2.resize(img, (1024, 1024))
-        label = cv2.imread(self.labels_list[idx], 0)
-        # label = cv2.resize(label, (1024, 1024))
-        label = np.where(label > 0, 255, 0)
-        label = np.array(label, dtype=np.uint8)
-        centers_pos = get_crop_box(label)
-        label = label[:, :, np.newaxis]
-        data = np.concatenate((img, label), axis=-1)
+        img = self.get_image(idx)
+        labels = self.get_label(idx)
+        label_mask = self.get_label_mask(img, labels)
         if self.transform:
-            data = self.transform(data)
-        imgs = []
-        labels = []
-        assert len(centers_pos) > 0
-        for x, y, area in centers_pos:
-            out_data = MyCrop((x, y), (128, 128))(data)
-            img = out_data[:3, :, :]
-            label = out_data[3:, :, :]
-            imgs.append(img)
-            labels.append(label)
-        imgs = torch.stack(imgs)
-        labels = torch.stack(labels)
-        if self.target_transform:
-            imgs = self.target_transform(imgs)
-        return imgs, labels
+            img = self.transform(img)
+        label_mask = torch.tensor(label_mask/255, dtype=torch.float)
+        label_mask = torch.unsqueeze(label_mask, 0)
+        return img, labels, label_mask
 
 
 def make_division(tensor, md=32):
@@ -165,77 +103,38 @@ def make_division(tensor, md=32):
     return zeroPad2d(tensor)
 
 
-def filter_center_pos(center_x, center_y, centers_pos, filter=120):
-    for x, y, _ in centers_pos:
-        if abs(center_x - x) < filter and abs(center_y - y) < filter:
-            return False
-    return True
-
-
-def get_crop_box(img):
-    contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    # print(len(contours))
-    centers_pos = []
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > 8:
-            bbox = cv2.boundingRect(contour)
-            center_x = bbox[0] + bbox[2] // 2
-            center_y = bbox[1] + bbox[3] // 2
-            if filter_center_pos(center_x, center_y, centers_pos):
-                centers_pos.append((center_x, center_y, area))
-    return centers_pos
-
-
 def show(img, win_name):
     cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
     cv2.imshow(win_name, img)
-    cv2.waitKey(10)
+    cv2.waitKey(0)
 
 
-def show_tensor(img, name="show"):
-    img = img[0, :, :, :] * 255
-    img = img.permute(1, 2, 0)
-    img = img.detach().numpy()
-    img = np.array(img, dtype=np.uint8)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    show(img, name)
+def collate_fn(batch):
+    images, labels, label_masks = list(zip(*batch))
+    batched_imgs = torch.stack(images)
+    batched_masks = torch.stack(label_masks)
+    return batched_imgs, list(labels), batched_masks
 
 
-def get_dataloader(root):
+def get_dataloader(root, is_train, batch_size=2, max_len=None):
     data_transform = transforms.Compose([
         transforms.ToTensor(),
-        # transforms.ToPILImage(),
-        # transforms.FiveCrop(1024),
-        # transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))
-        # transforms.RandomResizedCrop(3072),
-        # transforms.ToTensor(),
-        # transforms.Normalize(mean=[0.485, 0.456, 0.406],
-        #                      std=[0.229, 0.224, 0.225])
-    ])
-    target_transform = transforms.Compose([
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225])
     ])
-    dataset = MyDataset(root_dir=root, transform=data_transform, target_transform=target_transform)
-    dataset_loader = DataLoader(dataset, batch_size=1, shuffle=True)
+    dataset = MyDataset(root_dir=root, is_train=is_train, max_len=max_len, transform=data_transform)
+    dataset_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
     return dataset_loader
 
 
 if __name__ == '__main__':
     print("dataset")
-    root = r"D:\learnspace\dataset\project_001\tile_round1"
-    dataloader = get_dataloader(root)
-    for img, label in dataloader:
+    import time
+    print(int(time.time()))
+    root = r"D:\learnspace\dataset\project_001\divide_tile_round1"
+    dataloader = get_dataloader(root, True, 10)
+    for img, label, label_mask in dataloader:
         # img = make_division(img)
         # label = make_division(label)
-        img = torch.squeeze(img, dim=0)
-        label = torch.squeeze(label, dim=0)
-        print(img.size(), label.size())
-        print(torch.sum(label))
-        target = label.detach().numpy()
-        target = target[0, 0, :, :] * 255
-        target = np.array(target, dtype=np.uint8)
-        print(np.sum(target))
-        show_tensor(label, "label")
-        show_tensor(img)
+        print(img.shape, len(label), label_mask.shape, torch.sum(label_mask))
+

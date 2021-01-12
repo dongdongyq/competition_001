@@ -65,6 +65,22 @@ class MyModel(nn.Module):
         return x
 
 
+class Detect(nn.Module):
+    def __init__(self):
+        super(Detect, self).__init__()
+        c_in = 3
+        c_out = 1
+        encode = [16, 32, 64, 128]
+        self.encode_list = nn.ModuleList()
+        for c in encode:
+            self.encode_list.append(CBABlock(c_in, c, k=1, act=False))
+            self.encode_list.append(CBABlock(c, c, s=2, p=1))
+            c_in = c
+
+    def forward(self, x):
+        return x
+
+
 if __name__ == '__main__':
     print("model")
     model = MyModel()

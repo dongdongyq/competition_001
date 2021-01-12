@@ -8,6 +8,7 @@ import shutil
 import random
 import json
 import cv2
+import torch
 import numpy as np
 
 
@@ -50,15 +51,6 @@ def read_txt_label(label_path):
     return data
 
 
-def draw_box(img, bbox):
-    for box in bbox:
-        box = np.array(box, dtype=np.int)
-        point_top = tuple(box[:2])
-        point_bottom = tuple(box[2:])
-        cv2.rectangle(img, point_top, point_bottom, (0, 0, 255), 2)
-    return img
-
-
 def show(img, win_name="show"):
     cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
     cv2.imshow(win_name, img)
@@ -73,44 +65,6 @@ def check_or_make_dir(root, dir_name, mkdir=False):
         else:
             raise ValueError("Error path: " + dir_path)
     return dir_path
-
-
-def generate_mask_labels(images_dir, labels_dir):
-    images_name = os.listdir(images_dir)
-    for name in images_name:
-        image_path = check_or_make_dir(images_dir, name)
-        label_path = check_or_make_dir(labels_dir, name.split(".")[0] + ".txt")
-        img = cv2.imread(image_path)
-        size = img.shape[:2]
-        zero = np.zeros(size, dtype=np.uint8)
-        label_data = read_txt_label(label_path)   # ['4 0.575109 0.663859 0.018750 0.012500']
-        for data in label_data:
-            bbox_data = data.split(" ")[1:]
-            center_bbox = np.array(bbox_data, dtype=np.float)
-            point_lt = center_bbox[:2] - center_bbox[2:] / 2
-            point_rb = center_bbox[:2] + center_bbox[2:] / 2
-            point_lt = np.array(point_lt * size[::-1], dtype=np.int)
-            point_rb = np.array(point_rb * size[::-1], dtype=np.int)
-            # print(name, center_bbox, point_lt, point_rb)
-            cv2.rectangle(img, tuple(point_lt), tuple(point_rb), (0, 0, 255), 2)
-        show(img)
-
-
-def generate_mask_dataset(images_dir_path, labels_dir_path, save_mask_path):
-    train_images_dir = check_or_make_dir(images_dir_path, "train")
-    val_images_dir = check_or_make_dir(images_dir_path, "val")
-    train_labels_dir = check_or_make_dir(labels_dir_path, "train")
-    val_labels_dir = check_or_make_dir(labels_dir_path, "val")
-
-    generate_mask_labels(train_images_dir, train_labels_dir)
-    # p1 = (int(bbox[0]), int(bbox[1]))
-    # p2 = (int(bbox[2]), int(bbox[3]))
-    # if os.path.exists(label_path):
-    #     label = cv2.imread(label_path, 0)
-    # else:
-    #     label = np.zeros([height, width])
-    # cv2.rectangle(label, p1, p2, 255, -1)
-    # cv2.imwrite(label_path, label)
 
 
 def generate_val_dataset(root, p=0.3):
@@ -146,23 +100,50 @@ def generate_val_dataset(root, p=0.3):
         shutil.move(ori_lab_file, new_lab_file)
 
 
+class ConfusionMatrix(object):
+    def __init__(self, num_classes):
+        self.mat = None
+
+    def update(self, a, b):
+        if self.mat is None:
+            self.mat = torch.zeros((3, ), dtype=torch.int64, device=a.device)
+        with torch.no_grad():
+            inds = a.to(torch.int64) + b
+            count = torch.bincount(inds)
+            for i in range(count.shape[0]):
+                # print(i, count[i])
+                self.mat[i] += count[i]
+            # print(self.mat)
+
+    def reset(self):
+        self.mat.zero_()
+
+    def compute(self):
+        h = self.mat.float()
+        # acc_global = torch.diag(h).sum() / h.sum()
+        # acc = torch.diag(h) / h.sum(1)
+        iu = h[2] / (h[1] + h[2])
+        return iu
+
+    def __str__(self):
+        iu = self.compute()
+        return 'mean IoU: {:.3f}'.format(
+                iu.mean().item() * 100)
+
+
 def main():
-    root = r"D:\python\competition\dataset\tile_round1"
+    root = r"D:\learnspace\dataset\project_001\divide_tile_round1"
     images_dir = "images"
     labels_dir = "labels"
-    labels_mask_dir = "labels_mask"
-
-    # generate_val_dataset(root)
+    # labels_mask_dir = "labels_mask"
 
     images_dir_path = check_or_make_dir(root, images_dir)
     labels_dir_path = check_or_make_dir(root, labels_dir)
 
-    save_mask_path = check_or_make_dir(root, labels_mask_dir, mkdir=True)
-    generate_mask_dataset(images_dir_path, labels_dir_path, save_mask_path)
+    # save_mask_path = check_or_make_dir(root, labels_mask_dir, mkdir=True)
+    # generate_mask_dataset(images_dir_path, labels_dir_path, save_mask_path)
 
 
 if __name__ == '__main__':
     print("utils")
-    main()
-    # generate_val_dataset(r"D:\learnspace\dataset\project_001\divide_tile_round1", p=0.3)
-    # print(np.array([2, 3, 4, 5]) * np.array([4, 5]))
+    # main()

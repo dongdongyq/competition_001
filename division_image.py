@@ -9,13 +9,11 @@
 """
 import os
 import cv2
+import random
 import numpy as np
 from multiprocessing import Pool
 
-from utils import draw_box
-
-
-from utils import get_json_data, json_data_to_images_data, check_or_make_dir
+from utils import get_json_data, json_data_to_images_data, check_or_make_dir, generate_val_dataset
 
 
 def division_according_sliding(image, size, stride, padding=False):
@@ -193,11 +191,19 @@ def save_yolo_dataset(save_path, save_name, save_img, save_label):
     """
     save_images_dir = "images"
     save_labels_dir = "labels"
-    save_images_path = check_or_make_dir(save_path, save_images_dir, mkdir=True)
-    train_images_path = check_or_make_dir(save_images_path, "train", mkdir=True)
+    save_images_path = os.path.join(save_path, save_images_dir)
+    if not os.path.exists(save_images_path):
+        os.mkdir(save_images_path)
+    train_images_path = os.path.join(save_images_path, "train")
+    if not os.path.exists(train_images_path):
+        os.mkdir(train_images_path)
 
-    save_labels_path = check_or_make_dir(save_path, save_labels_dir, mkdir=True)
-    train_labels_path = check_or_make_dir(save_labels_path, "train", mkdir=True)
+    save_labels_path = os.path.join(save_path, save_labels_dir)
+    if not os.path.exists(save_labels_path):
+        os.mkdir(save_labels_path)
+    train_labels_path = os.path.join(save_labels_path, "train")
+    if not os.path.exists(train_labels_path):
+        os.mkdir(train_labels_path)
 
     save_images(train_images_path, save_name, save_img)
     save_name = save_name.split(".")[0] + ".txt"
@@ -216,11 +222,13 @@ def deal_one_image(img_name, images_data, images_dir_path, divide_size, stride, 
     :return:
     """
     print(img_name)
-    image_path = check_or_make_dir(images_dir_path, img_name)
+    image_path = os.path.join(images_dir_path, img_name)
     image_data = images_data.get(img_name, None)
     if image_data is None:
         return
     print(image_path, image_data)
+    if not os.path.exists(image_path):
+        return
     img = cv2.imread(image_path)
     divide_images, original_position = division_according_sliding(img, divide_size, stride, True)
     bboxes = deal_bbox(original_position, image_data["bbox"])
@@ -234,38 +242,43 @@ def deal_one_image(img_name, images_data, images_dir_path, divide_size, stride, 
         item["width"] = divide_size[1]
         save_yolo_dataset(save_path, save_name, save_img, item)
         print(save_name, index, item)
-        # img = draw_box(save_img, item["bbox"])
-        # show(img, "box")
 
 
 def main():
     root = r"D:\python\competition\dataset\tile_round1_train_20201231"
-    json_file = r"train_annos.json"
-    images_dir = r"train_imgs"
+    json_file = "train_annos.json"
+    images_dir = "train_imgs"
     save_path = r"D:\python\competition\dataset\tile_round1"
-
-    divide_size = [640, 640]  # [h, w]
-    stride = [600, 600]  # [h, w]
+    divide_size = [128, 128]  # [h, w]
+    stride = [120, 120]       # [h, w]
+    max_num = 1000
     if not os.path.exists(save_path):
         os.mkdir(save_path)
 
-    images_dir_path = check_or_make_dir(root, images_dir)
-    json_file_path = check_or_make_dir(root, json_file)
+    save_path = check_or_make_dir(save_path, "size{}X{}".format(divide_size[0], divide_size[1]), mkdir=True)
+
+    images_dir_path = os.path.join(root, images_dir)
+    json_file_path = os.path.join(root, json_file)
 
     images_name = os.listdir(images_dir_path)
     json_data = get_json_data(json_file_path)
     images_data = json_data_to_images_data(json_data)
+    random.shuffle(images_name)
     p = Pool(4)
-    for img_name in images_name:
+    for i, img_name in enumerate(images_name):
+        if max_num != -1:
+            if i >= max_num:
+                continue
         try:
             # deal_one_image(img_name, images_data, images_dir_path, divide_size, stride, save_path)
             p.apply_async(deal_one_image, args=(img_name, images_data,
-                                                images_dir_path, divide_size, stride, save_path,))
+                                                images_dir_path, divide_size, stride, save_path, ))
         except Exception as e:
             print(e, img_name)
             continue
     p.close()
     p.join()
+    generate_val_dataset(save_path, p=0.3)
 
 
 if __name__ == "__main__":
