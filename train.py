@@ -58,8 +58,6 @@ def train_one_epoch(model, device, train_loader, optimizer, epoch, criterion, sa
     pbar = enumerate(train_loader)
     pbar = tqdm(pbar, total=len(train_loader))
     for i, (img, label, label_mask) in pbar:
-        # img = make_division(img)
-        # label = make_division(label)
         img = img.to(device)
         label_mask = label_mask.to(device)
         pred = model(img)
