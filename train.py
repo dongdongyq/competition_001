@@ -54,12 +54,14 @@ def save_output(pred, target, epoch, index, save_dir):
     cv2.imwrite(save_path + "/epoch{:02}_index{:03}.jpg".format(epoch, index), save_img)
 
 
-def train_one_epoch(model, train_loader, optimizer, epoch, criterion, save_dir):
+def train_one_epoch(model, device, train_loader, optimizer, epoch, criterion, save_dir):
     pbar = enumerate(train_loader)
     pbar = tqdm(pbar, total=len(train_loader))
     for i, (img, label, label_mask) in pbar:
         # img = make_division(img)
         # label = make_division(label)
+        img = img.to(device)
+        label_mask = label_mask.to(device)
         pred = model(img)
 
         output = pred.view(pred.size(0), -1)
@@ -77,7 +79,7 @@ def train_one_epoch(model, train_loader, optimizer, epoch, criterion, save_dir):
             save_output(pred, label_mask, epoch, i, save_dir)
 
 
-def evaluate(val_dataset, model, conf_thr=0.5):
+def evaluate(val_dataset, model, device, conf_thr=0.5):
     confmat = ConfusionMatrix(2)
     model.eval()
     pbar = enumerate(val_dataset)
@@ -85,6 +87,8 @@ def evaluate(val_dataset, model, conf_thr=0.5):
     for i, (img, label, label_mask) in pbar:
         # img = make_division(img)
         # label = make_division(label)
+        img = img.to(device)
+        label_mask = label_mask.to(device)
         pred = model(img)
         pred = torch.where(pred > conf_thr, 1, 0)
         confmat.update(label_mask.flatten(), pred.flatten())
@@ -92,13 +96,16 @@ def evaluate(val_dataset, model, conf_thr=0.5):
 
 
 def main(opt):
+    device = torch.device(opt.device)
     # model
     model = MyModel()
-    pretrained = "./weights/train_1610438748/model_09.pt"
+    model.to(device)
+    pretrained = opt.pretrained
     if pretrained:
         model_url = pretrained
         ckpt = torch.load(model_url)
         model = ckpt["model"]
+        model.to(device)
 
     # optimizer
     pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
@@ -132,13 +139,13 @@ def main(opt):
     start_epoch = 0
     for epoch in range(start_epoch, opt.epochs):
         model.train()
-        train_one_epoch(model, train_loader, optimizer, epoch, criterion, save_dir)
+        train_one_epoch(model, device, train_loader, optimizer, epoch, criterion, save_dir)
         ckpt = {'epoch': epoch,
                 'model': model,
                 'optimizer': optimizer.state_dict()}
         torch.save(ckpt, save_dir + "/model_{:02}.pt".format(epoch))
         scheduler.step()
-        confmat = evaluate(val_loader, model)
+        confmat = evaluate(val_loader, model, device)
         print(confmat)
 
 
@@ -146,9 +153,9 @@ if __name__ == '__main__':
     print("train")
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=10, help='epochs')
-    parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
+    parser.add_argument('--pretrained', type=str, default='', help='pretrained model')
     parser.add_argument('--data', type=str, default='data/coco128.yaml', help='data.yaml path')
-    parser.add_argument('--hyp', type=str, default='data/hyp.scratch.yaml', help='hyperparameters path')
+    parser.add_argument('--device', type=str, default='cuda', help='cuda or cpu')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
     opt = parser.parse_args()
     main(opt)
