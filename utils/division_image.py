@@ -8,7 +8,7 @@ import cv2
 import argparse
 import random
 import numpy as np
-from utils.common import get_json_data, json_data_to_images_data,\
+from common import get_json_data, json_data_to_images_data,\
     check_or_make_dir, divide_according_sliding, save_json, make_pair
 
 

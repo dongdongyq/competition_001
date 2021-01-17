@@ -7,7 +7,7 @@ import os
 import argparse
 import copy
 import random
-from utils.common import check_or_make_dir, get_json_data, save_json
+from common import check_or_make_dir, get_json_data, save_json
 
 
 def save_coco_data(json_data, save_path, images, annotations):
