@@ -150,7 +150,7 @@ def deal_one_image(i, nums, img_name, images_data, images_dir_path, divide_size,
         save_img = divide_images[index]
         item["height"] = divide_size[0]
         item["width"] = divide_size[1]
-        generate_images(save_path, save_name, save_img, item)
+        generate_images(save_path, save_name, save_img)
         # generate_txt_labels(save_path, save_name, item)
         dataset.write(save_name, divide_size, item["bbox"], item["category"])
         # print(save_name, index, item)
