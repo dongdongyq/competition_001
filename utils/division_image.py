@@ -7,6 +7,7 @@ import os
 import cv2
 import argparse
 import random
+import tqdm
 import numpy as np
 from common import get_json_data, json_data_to_images_data,\
     check_or_make_dir, divide_according_sliding, save_json, make_pair
@@ -105,13 +106,12 @@ def generate_txt_labels(save_path, save_name, save_label):
             fp.write(data)
 
 
-def generate_images(save_path, save_name, save_img, save_label):
+def generate_images(save_path, save_name, save_img):
     """
     将分割后的图像和label保存成yolo格式的
     :param save_path:
     :param save_name:
     :param save_img:
-    :param save_label:
     :return:
     """
     save_images_dir = "images"
@@ -119,7 +119,7 @@ def generate_images(save_path, save_name, save_img, save_label):
     save_images(save_images_path, save_name, save_img)
 
 
-def deal_one_image(img_name, images_data, images_dir_path, divide_size, stride, save_path, dataset):
+def deal_one_image(i, nums, img_name, images_data, images_dir_path, divide_size, stride, save_path, dataset):
     """
     分割一张图像
     :param img_name: 图像名
@@ -143,7 +143,9 @@ def deal_one_image(img_name, images_data, images_dir_path, divide_size, stride, 
     valid_images_info = filter_bbox_and_images(bboxes, image_data["category"], divide_size[::-1])
     if not valid_images_info:
         return
-    for i, (index, item) in enumerate(valid_images_info.items()):
+    pb = tqdm.tqdm(enumerate(valid_images_info.items()))
+    for i, (index, item) in pb:
+        pb.set_description("{}/{}".format(i, nums))
         save_name = img_name[:-4] + "_{:04}".format(i) + img_name[-4:]
         save_img = divide_images[index]
         item["height"] = divide_size[0]
@@ -151,7 +153,7 @@ def deal_one_image(img_name, images_data, images_dir_path, divide_size, stride, 
         generate_images(save_path, save_name, save_img, item)
         # generate_txt_labels(save_path, save_name, item)
         dataset.write(save_name, divide_size, item["bbox"], item["category"])
-        print(save_name, index, item)
+        # print(save_name, index, item)
 
 
 class CocoData(object):
@@ -323,7 +325,7 @@ def main(args):
         if max_num != -1:
             if i >= max_num:
                 continue
-        deal_one_image(img_name, images_data, images_dir_path, divide_size, stride, save_path, dataset)
+        deal_one_image(i, len(images_name), img_name, images_data, images_dir_path, divide_size, stride, save_path, dataset)
     if data_name == "coco":
         dataset.save()
     else:
