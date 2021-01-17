@@ -6,39 +6,10 @@ data: 2021/1/5
 import os
 import shutil
 import random
-import json
 import cv2
 import torch
 import numpy as np
-
-
-def get_json_data(file_path):
-    if not os.path.exists(file_path):
-        print("Error ", file_path)
-
-    with open(file_path, "r") as fp:
-        return json.loads(fp.read())
-
-
-def json_data_to_images_data(json_data):
-    """
-    将给定的label转换成以图片名为key的字典
-    :param json_data:
-    :return:
-    """
-    images_data = {}
-    for item in json_data:
-        if item["name"] not in images_data:
-            images_data[item["name"]] = {
-                'height': item["image_height"],
-                'width': item["image_width"],
-                'category': [item["category"]],
-                'bbox': [item["bbox"]],
-            }
-        else:
-            images_data[item["name"]]["category"].append(item["category"])
-            images_data[item["name"]]["bbox"].append(item["bbox"])
-    return images_data
+from utils.common import check_or_make_dir, get_json_data, json_data_to_images_data
 
 
 def read_txt_label(label_path):
@@ -51,20 +22,31 @@ def read_txt_label(label_path):
     return data
 
 
+def parse_txt(line, size):
+    height, width = size
+    line = line.split(" ")
+    category = int(line[0])
+    box = [float(b) for b in line[1:]]  # x, y, w, h
+    box[0] = round(box[0] * width)
+    box[1] = round(box[1] * height)
+    box[2] = round(box[2] * width)
+    box[3] = round(box[3] * height)
+    return category, box
+
+
+def xywh_to_xyxy(box):
+    box = np.array(box, dtype=np.int)
+    xy = box[:2]
+    wh = box[2:]
+    box[:2] = xy - wh//2
+    box[2:] = xy + wh//2
+    return list(box)
+
+
 def show(img, win_name="show"):
     cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
     cv2.imshow(win_name, img)
     cv2.waitKey(0)
-
-
-def check_or_make_dir(root, dir_name, mkdir=False):
-    dir_path = os.path.join(root, dir_name)
-    if not os.path.exists(dir_path):
-        if mkdir:
-            os.mkdir(dir_path)
-        else:
-            raise ValueError("Error path: " + dir_path)
-    return dir_path
 
 
 def generate_val_dataset(root, p=0.3):
@@ -131,19 +113,61 @@ class ConfusionMatrix(object):
                 iu.mean().item() * 100)
 
 
+def draw_box(img, boxes, names, colors):
+    for i, box in enumerate(boxes):
+        p1 = int(box[0]), int(box[1])
+        p2 = int(box[2]), int(box[3])
+        cv2.rectangle(img, p1, p2, colors[names[i]], 2)
+        cv2.putText(img, str(names[i]), p1, cv2.FONT_HERSHEY_COMPLEX, 5, colors[names[i]], 12)
+    return img
+
+
 def main():
-    root = r"D:\learnspace\dataset\project_001\divide_tile_round1"
-    images_dir = "images"
-    labels_dir = "labels"
-    # labels_mask_dir = "labels_mask"
+    root = r"D:\learnspace\dataset\project_001\tile_round1"
+    images_dir = "train_imgs"
+    json_file = "train_annos.json"
+    colors = [(0, 255, 255), (0, 0, 255), (255, 0, 0),
+              (0, 255, 0), (255, 255, 0), (255, 0, 255)]
 
     images_dir_path = check_or_make_dir(root, images_dir)
-    labels_dir_path = check_or_make_dir(root, labels_dir)
+    json_file_path = check_or_make_dir(root, json_file)
+    images_file = os.listdir(images_dir_path)
+    json_data = get_json_data(json_file_path)
+    images_data = json_data_to_images_data(json_data)
 
-    # save_mask_path = check_or_make_dir(root, labels_mask_dir, mkdir=True)
-    # generate_mask_dataset(images_dir_path, labels_dir_path, save_mask_path)
+    images_info = {}
+    for name in images_file:
+        img_name = name.rsplit("_", 2)[0]
+        # print(name, img_name, images_data[name])
+        if img_name not in images_info:
+            images_info[img_name] = [images_data[name]]
+        else:
+            images_info[img_name].append(images_data[name])
+        img = cv2.imread(os.path.join(images_dir_path, name))
+        img1_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        ret, img1_thres = cv2.threshold(img1_gray, 50, 255, cv2.THRESH_BINARY)
+
+        contours, hierarchy = cv2.findContours(img1_thres, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+
+        cv2.drawContours(img, contours, -1, (0, 0, 255), 3)
+        # blur = cv2.GaussianBlur(img, (3, 3), 0)  # 用高斯滤波处理原图像降噪
+        # canny = cv2.Canny(blur, 100, 200)  # 50是最小阈值,150是最大阈值
+        # cv2.imshow('canny', canny)
+        show(img)
+
+    # for k, v in images_info.items():
+    #     if len(v) > 1:
+    #         for item in v:
+    #             print(item)
+    #             name = item["name"]
+    #             boxes = item["bbox"]
+    #             categories = item["category"]
+    #             img = cv2.imread(os.path.join(images_dir_path, name))
+    #             img = draw_box(img, boxes, categories, colors)
+    #             show(img, name)
 
 
 if __name__ == '__main__':
     print("utils")
-    # main()
+    main()

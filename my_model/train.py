@@ -3,7 +3,6 @@
 author: DongYanQiang
 data: 2021/1/5
 """
-import os
 import math
 from tqdm import tqdm
 import argparse
@@ -14,10 +13,10 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.optim import lr_scheduler
-from model import MyModel
-from dataset import get_dataloader, make_division
+from my_model.model import MyModel
+from my_model.dataset import get_dataloader
 
-from utils import check_or_make_dir, ConfusionMatrix
+from utils.utils import check_or_make_dir, ConfusionMatrix
 
 
 def my_criterion(output, target):
