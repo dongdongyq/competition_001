@@ -11,10 +11,9 @@ import os
 import argparse
 import paddlex as pdx
 import tqdm
-import json
 import cv2
 from paddle_model.dataset import eval_transforms
-from utils.common import divide_according_sliding, make_pair
+from utils.common import divide_according_sliding, make_pair, save_json
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -36,8 +35,6 @@ def main(args):
         os.makedirs(save_dir)
 
     model = pdx.load_model(model_dir)
-    result = []
-
     for i, img_file in enumerate(image_list):
         if img_file.split(".")[-1] not in valid_suffix:
             continue
@@ -60,10 +57,8 @@ def main(args):
                     'score': res[k]['score']
                 }
                 divide_result.append(res_data)
-        result.append(divide_result)
-
-    with open(os.path.join(save_dir, 'division_result.json'), 'w') as fp:
-        json.dump(result, fp, indent=4, ensure_ascii=False)
+        save_path = os.path.join(save_dir, img_file.split(".")[0] + ".json")
+        save_json(save_path, divide_result)
 
 
 def parse_args():

@@ -62,6 +62,7 @@ def generate_coco_train_val(root_dir, ann_file, ratio=0.3):
 def generate_voc_train_val(root_dir, ratio=0.3):
     image_dir = "images"
     ann_dir = "Annotations"
+    seg_dir = "Segmentation"
     images_path = check_or_make_dir(root_dir, "images")
     images_file = os.listdir(images_path)
     all_num = len(images_file)
@@ -73,14 +74,25 @@ def generate_voc_train_val(root_dir, ratio=0.3):
     val_path = os.path.join(root_dir, "val.txt")
     if os.path.exists(val_path):
         os.remove(val_path)
+
+    seg_train_path = os.path.join(root_dir, "seg_train.txt")
+    if os.path.exists(train_path):
+        os.remove(train_path)
+    seg_val_path = os.path.join(root_dir, "seg_val.txt")
+    if os.path.exists(val_path):
+        os.remove(val_path)
     print("all data is {}, train data is {}, val data is {}".format(all_num, train_num, all_num - train_num))
     for i, img_name in enumerate(images_file):
         xml_name = "{}.xml".format(img_name.split(".")[0])
-        data = "{}/{} {}/{}".format(image_dir, img_name, ann_dir, xml_name)
+        png_name = "{}.png".format(img_name.split(".")[0])
+        data_xml = "{}/{} {}/{}".format(image_dir, img_name, ann_dir, xml_name)
+        data_seg = "{}/{} {}/{}".format(image_dir, img_name, seg_dir, png_name)
         if i < train_num:
-            save_voc_data(train_path, data)
+            save_voc_data(train_path, data_xml)
+            save_voc_data(seg_train_path, data_seg)
         else:
-            save_voc_data(val_path, data)
+            save_voc_data(val_path, data_xml)
+            save_voc_data(seg_val_path, data_seg)
 
 
 def main(args):

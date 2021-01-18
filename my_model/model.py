@@ -7,13 +7,21 @@ import torch.nn as nn
 from torchsummary import summary
 
 
+class Identity(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(Identity, self).__init__()
+
+    def forward(self, inp):
+        return inp
+
+
 class CBABlock(nn.Module):
     def __init__(self, c_in, c_out, k=3, s=1, p=0, b=False, act=True):
         super(CBABlock, self).__init__()
         self.cba = nn.Sequential(
             nn.Conv2d(c_in, c_out, k, s, p, bias=b),
             nn.BatchNorm2d(c_out),
-            nn.ReLU6() if act is True else nn.Identity()
+            nn.ReLU6() if act is True else Identity()
         )
 
     def forward(self, x):
@@ -27,7 +35,7 @@ class CTBABlock(nn.Module):
         self.ctba = nn.Sequential(
             nn.ConvTranspose2d(c_in, c_out, k, s, p, op, bias=b),
             nn.BatchNorm2d(c_out),
-            nn.ReLU6() if act is True else nn.Identity()
+            nn.ReLU6() if act is True else Identity()
         )
 
     def forward(self, x):

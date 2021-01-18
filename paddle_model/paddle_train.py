@@ -9,11 +9,10 @@
 """
 import os
 import argparse
-# 环境变量配置，用于控制是否使用GPU
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-
 from paddle_model.dataset import get_dataset
 import paddlex as pdx
+# 环境变量配置，用于控制是否使用GPU
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 
 def train(args):

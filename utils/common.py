@@ -15,7 +15,7 @@ COLORS = [(0, 0, 255), (0, 255, 0), (255, 0, 0),
 
 
 def execute_cmd(cmd):
-    logging.info(cmd)
+    # logging.info(cmd)
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     while p.poll() is None:
         line = p.stdout.readline().decode("utf-8")
@@ -26,7 +26,7 @@ def execute_cmd(cmd):
         logging.info("success execute " + cmd)
         return True
     else:
-        logging.ERROR("fail execute " + cmd)
+        logging.error("fail execute " + cmd)
         return False
 
 
@@ -70,17 +70,17 @@ def check_or_make_dir(root, dir_name, mkdir=False):
     dir_path = os.path.join(root, dir_name)
     if not os.path.exists(dir_path):
         if mkdir:
-            os.mkdir(dir_path)
+            os.makedirs(dir_path)
         else:
             raise ValueError("Error path: " + dir_path)
     return dir_path
 
 
-def save_json(save_path, save_data):
+def save_json(save_path, result):
     if not save_path.endswith(".json"):
         raise ValueError(save_path)
-    with open(save_path, 'w') as fw:
-        json.dump(save_data, fw)
+    with open(save_path, 'w') as fp:
+        json.dump(result, fp, indent=4, ensure_ascii=False)
 
 
 def xywh_to_xyxy(box):

@@ -83,34 +83,34 @@ def generate_val_dataset(root, p=0.3):
 
 
 class ConfusionMatrix(object):
-    def __init__(self, num_classes):
+    def __init__(self, thr=0.5):
         self.mat = None
+        self.thr = thr
 
     def update(self, a, b):
         if self.mat is None:
             self.mat = torch.zeros((3, ), dtype=torch.int64, device=a.device)
         with torch.no_grad():
-            inds = a.to(torch.int64) + b
-            count = torch.bincount(inds)
-            for i in range(count.shape[0]):
-                # print(i, count[i])
+            a = torch.where(a > self.thr, 1, 0)
+            count = torch.bincount(a + b)
+            for i in range(len(count)):
                 self.mat[i] += count[i]
-            # print(self.mat)
 
     def reset(self):
         self.mat.zero_()
 
     def compute(self):
+        # print(self.mat)
         h = self.mat.float()
-        # acc_global = torch.diag(h).sum() / h.sum()
-        # acc = torch.diag(h) / h.sum(1)
-        iu = h[2] / (h[1] + h[2])
-        return iu
+        if h[1] + h[2] == 0:
+            return 0.
+        iou = h[2] / (h[1] + h[2])
+        return iou
 
     def __str__(self):
-        iu = self.compute()
+        iou = self.compute()
         return 'mean IoU: {:.3f}'.format(
-                iu.mean().item() * 100)
+                iou.mean().item() * 100)
 
 
 def draw_box(img, boxes, names, colors):

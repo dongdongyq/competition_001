@@ -19,15 +19,9 @@ from my_model.dataset import get_dataloader
 from utils.utils import check_or_make_dir, ConfusionMatrix
 
 
-def my_criterion(output, target):
-    return -torch.log(output)
-
-
 def compute_loss(output, target, criterion):
     # print(output.shape, target.shape)
-    pos = torch.sum(target)
-    area = target.shape[-1]
-    scale = pos / area
+    target = target.to(torch.float32)
     loss = criterion(output, target)
     return loss
 
@@ -37,28 +31,27 @@ def save(epoch, index, loss, save_dir):
         fp.write("epoch: %d, index: %d, loss: %.6f\n" % (epoch, index, loss))
 
 
-def save_output(pred, target, epoch, index, save_dir):
+def save_output(pred, target, epoch, index, save_path):
     # pred = torch.sigmoid(pred)
     output = pred.detach().numpy()
     output = output[0, 0, :, :] * 255
-    # output = np.where(output > 100, 255, 0)
+    output = np.where(output > 120, 255, 0)
     output = np.array(output, dtype=np.uint8)
 
     target = target.detach().numpy()
-    target = target[0, 0, :, :] * 255
+    target = target[0, :, :] * 255
     target = np.array(target, dtype=np.uint8)
-
     save_img = np.concatenate((output, target), axis=1)
-    save_path = check_or_make_dir(save_dir, "outputs", mkdir=True)
     cv2.imwrite(save_path + "/epoch{:02}_index{:03}.jpg".format(epoch, index), save_img)
 
 
 def train_one_epoch(model, device, train_loader, optimizer, epoch, criterion, save_dir):
+    save_path = check_or_make_dir(save_dir, "outputs", mkdir=True)
     pbar = enumerate(train_loader)
     pbar = tqdm(pbar, total=len(train_loader))
-    for i, (img, label, label_mask) in pbar:
+    for i, (img, label) in pbar:
         img = img.to(device)
-        label_mask = label_mask.to(device)
+        label_mask = label.to(device)
         pred = model(img)
 
         output = pred.view(pred.size(0), -1)
@@ -73,22 +66,22 @@ def train_one_epoch(model, device, train_loader, optimizer, epoch, criterion, sa
         pbar.set_description(s)
         save(epoch, i, loss, save_dir)
         if i % 50 == 0:
-            save_output(pred, label_mask, epoch, i, save_dir)
+            save_output(pred, label_mask, epoch, i, save_path)
 
 
-def evaluate(val_dataset, model, device, conf_thr=0.5):
-    confmat = ConfusionMatrix(2)
+def evaluate(val_dataset, model, device, epoch, save_dir):
+    save_path = check_or_make_dir(save_dir, "evaluate", mkdir=True)
+    confmat = ConfusionMatrix()
     model.eval()
     pbar = enumerate(val_dataset)
     pbar = tqdm(pbar, total=len(val_dataset))
-    for i, (img, label, label_mask) in pbar:
-        # img = make_division(img)
-        # label = make_division(label)
+    for i, (img, label) in pbar:
         img = img.to(device)
-        label_mask = label_mask.to(device)
+        label_mask = label.to(device)
         pred = model(img)
-        pred = torch.where(pred > conf_thr, 1, 0)
-        confmat.update(label_mask.flatten(), pred.flatten())
+        confmat.update(pred.flatten(), label_mask.flatten())
+        if i % 10 == 0:
+            save_output(pred, label_mask, epoch, i, save_path)
     return confmat
 
 
@@ -116,7 +109,7 @@ def main(opt):
     if opt.adam:
         optimizer = optim.Adam(pg0, lr=1e-4, betas=(0.98, 0.999))  # adjust beta1 to momentum
     else:
-        optimizer = optim.SGD(pg0, lr=1e-2, momentum=0.98, nesterov=True)
+        optimizer = optim.SGD(pg0, lr=1e-3, momentum=0.98, nesterov=True)
     optimizer.add_param_group({'params': pg1, 'weight_decay': 0.001})  # add pg1 with weight_decay
     optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
     lf = lambda x: ((1 + math.cos(x * math.pi / opt.epochs)) / 2) * (1 - 0.01) + 0.01  # cosine
@@ -126,12 +119,12 @@ def main(opt):
     # criterion = my_criterion
 
     # trainloader
-    root = r"D:\learnspace\dataset\project_001\divide_tile_round1\size640X640"
-    train_loader = get_dataloader(root, True, batch_size=1, max_len=1024)
-    val_loader = get_dataloader(root, False, batch_size=16, max_len=256)
+    root = r"D:\learnspace\dataset\project_001\tile_round1_divide\coco_size128X128"
+    train_loader = get_dataloader(root, "train.json", True, batch_size=1)
+    val_loader = get_dataloader(root, "val.json", False, batch_size=1)
 
     time_int = int(time.time())
-    save_dir = check_or_make_dir("./weights", "train_{}".format(time_int), mkdir=True)
+    save_dir = check_or_make_dir("../weights", "train_{}".format(time_int), mkdir=True)
     # train
     start_epoch = 0
     for epoch in range(start_epoch, opt.epochs):
@@ -142,17 +135,17 @@ def main(opt):
                 'optimizer': optimizer.state_dict()}
         torch.save(ckpt, save_dir + "/model_{:02}.pt".format(epoch))
         scheduler.step()
-        confmat = evaluate(val_loader, model, device)
+        confmat = evaluate(val_loader, model, device, epoch, save_dir)
         print(confmat)
 
 
 if __name__ == '__main__':
     print("train")
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=10, help='epochs')
+    parser.add_argument('--epochs', type=int, default=50, help='epochs')
     parser.add_argument('--pretrained', type=str, default='', help='pretrained model')
     parser.add_argument('--data', type=str, default='data/coco128.yaml', help='data.yaml path')
-    parser.add_argument('--device', type=str, default='cuda', help='cuda or cpu')
+    parser.add_argument('--device', type=str, default='cpu', help='cuda or cpu')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
     opt = parser.parse_args()
     main(opt)

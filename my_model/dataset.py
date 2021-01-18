@@ -5,10 +5,10 @@ data: 2021/1/5
 """
 import os
 import torch
-import cv2
+from PIL.ImageDraw import ImageDraw, Image
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
-from torchvision import transforms
+import transforms as T
 
 from utils.utils import check_or_make_dir, get_json_data
 
@@ -56,7 +56,7 @@ class MyCocoDataset(Dataset):
     def get_image(self, idx):
         image_item = self.images[idx]
         image_path = check_or_make_dir(self.images_dir, image_item["file_name"])
-        img = cv2.imread(image_path)
+        img = Image.open(image_path)
         return img
 
     def get_label(self, idx):
@@ -65,11 +65,14 @@ class MyCocoDataset(Dataset):
         height = image_item["height"]
         width = image_item["width"]
         mask = np.zeros((height, width), dtype=np.uint8)
+        mask = Image.fromarray(mask)
+        draw = ImageDraw(mask)
         annotations = self.annotations[img_id]
         for ann_item in annotations:
             segmentation = ann_item["segmentation"]
-            seg = np.array(segmentation, dtype=np.int).reshape(-1, 2)
-            cv2.drawContours(mask, [seg], 0, 255, -1)
+            seg = np.array(segmentation, dtype=np.int)
+            draw.polygon(tuple(seg[0]), fill=(1, ))
+            # cv2.drawContours(mask, [seg], 0, 255, -1)
         return mask
 
     def __getitem__(self, idx):
@@ -94,39 +97,43 @@ def make_division(tensor, md=32):
     return zeroPad2d(tensor)
 
 
-def show(img, win_name):
-    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
-    cv2.imshow(win_name, img)
-    cv2.waitKey(0)
+def get_transform(train):
+    base_size = 520
+    crop_size = 480
+
+    min_size = int((0.5 if train else 1.0) * base_size)
+    max_size = int((2.0 if train else 1.0) * base_size)
+    transforms = list()
+    # transforms.append(T.RandomResize(min_size, max_size))
+    if train:
+        transforms.append(T.RandomHorizontalFlip(0.5))
+        # transforms.append(T.RandomCrop(crop_size))
+    transforms.append(T.ToTensor())
+    transforms.append(T.Normalize(mean=[0.485, 0.456, 0.406],
+                                  std=[0.229, 0.224, 0.225]))
+    return T.Compose(transforms)
 
 
-def collate_fn(batch):
-    images, labels = list(zip(*batch))
-    batched_imgs = torch.stack(images)
-    return batched_imgs, labels
-
-
-def get_dataloader(root, ann_file, batch_size=1, max_len=None):
-    data_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225])
-    ])
-    dataset = MyCocoDataset(root_dir=root, ann_file=ann_file, transform=None, max_len=max_len)
-    dataset_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=None)
+def get_dataloader(root, ann_file, train=True, batch_size=1, max_len=None):
+    data_transform = get_transform(train)
+    dataset = MyCocoDataset(root_dir=root, ann_file=ann_file, transform=data_transform, max_len=max_len)
+    dataset_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataset_loader
 
 
 if __name__ == '__main__':
     print("dataset")
     import time
+    from utils.common import show
     print(int(time.time()))
     root = r"D:\learnspace\dataset\project_001\tile_round1_divide\coco_size128X128"
-    ann_file = "ann.json"
-    dataloader = get_dataloader(root, ann_file)
+    ann_file = "val.json"
+    dataloader = get_dataloader(root, ann_file, False)
     for img, label in dataloader:
         # img = make_division(img)
         # label = make_division(label)
         print(img.shape, label.shape, torch.sum(label))
+        b_count = torch.bincount(label.to(torch.int64).flatten())
+        print(b_count, torch.sum(label))
 
 

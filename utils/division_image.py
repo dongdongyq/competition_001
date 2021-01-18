@@ -119,9 +119,10 @@ def generate_images(save_path, save_name, save_img):
     save_images(save_images_path, save_name, save_img)
 
 
-def deal_one_image(i, nums, img_name, images_data, images_dir_path, divide_size, stride, save_path, dataset):
+def deal_one_image(curr, img_name, images_data, images_dir_path, divide_size, stride, save_path, dataset):
     """
     分割一张图像
+    :param curr: 当前处理到第几张图片
     :param img_name: 图像名
     :param images_data: 图像label信息
     :param images_dir_path: 图像所在目录
@@ -145,7 +146,7 @@ def deal_one_image(i, nums, img_name, images_data, images_dir_path, divide_size,
         return
     pb = tqdm.tqdm(enumerate(valid_images_info.items()))
     for i, (index, item) in pb:
-        pb.set_description("{}/{}".format(i, nums))
+        pb.set_description(curr)
         save_name = img_name[:-4] + "_{:04}".format(i) + img_name[-4:]
         save_img = divide_images[index]
         item["height"] = divide_size[0]
@@ -223,15 +224,19 @@ class CocoData(object):
 
 
 class VocData(object):
-    def __init__(self, save_path):
-        self.save_path = check_or_make_dir(save_path, "Annotations", mkdir=True)
+    def __init__(self, save_path, save_seg=False):
+        self.save_path = save_path
         self.categories = []
+        self.save_seg = save_seg
 
     def write(self, name, size, boxes, categories):
         save_name = name.replace(".jpg", ".xml")
         head_xml = self._voc_head(name, size)
         obj_xml = self._voc_obj(boxes, categories)
         self.save(save_name, head_xml+obj_xml)
+        if self.save_seg:
+            seg_save_name = name.replace(".jpg", ".png")
+            self.save_segmentation(seg_save_name, size, boxes, categories)
 
     def _voc_head(self, name, size):
         xml_head = '''
@@ -285,16 +290,33 @@ class VocData(object):
         return body
 
     def save(self, name, xml):
+        save_path = check_or_make_dir(self.save_path, "Annotations", mkdir=True)
         if not name.endswith(".xml"):
             raise ValueError(name)
-        save_path = os.path.join(self.save_path, name)
+        save_path = os.path.join(save_path, name)
         with open(save_path, 'w') as fw:
             fw.write(xml)
 
-    def save_label(self, save_path):
+    def save_segmentation(self, save_name, size, boxes, categories):
+        mask = np.zeros(size, dtype=np.uint8)
+        for i, box in enumerate(boxes):
+            xmin, ymin, xmax, ymax = box
+            contour = np.array([xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax], dtype=np.int).reshape(-1, 2)
+            cv2.drawContours(mask, [contour], 0, 255, -1)
+        save_path = check_or_make_dir(self.save_path, "Segmentation", mkdir=True)
+        save_path = os.path.join(save_path, save_name)
+        cv2.imwrite(save_path, mask)
+
+    def save_label(self):
+        save_path = os.path.join(self.save_path, "labels.txt")
         with open(save_path, "w") as fp:
             for category in self.categories:
                 fp.write(str(category) + "\n")
+        if self.save_seg:
+            seg_save_path = os.path.join(self.save_path, "seg_labels.txt")
+            with open(seg_save_path, "w") as fp:
+                for i in range(2):
+                    fp.write(str(i) + "\n")
 
 
 def main(args):
@@ -308,7 +330,7 @@ def main(args):
     save_path = check_or_make_dir(save_path,
                                   "{}_size{}X{}".format(data_name, divide_size[0], divide_size[1]), mkdir=True)
     if data_name == "voc":
-        dataset = VocData(save_path)
+        dataset = VocData(save_path, args.save_seg)
     elif data_name == "coco":
         dataset = CocoData(save_path)
     else:
@@ -321,22 +343,25 @@ def main(args):
     json_data = get_json_data(json_file_path)
     images_data = json_data_to_images_data(json_data)
     random.shuffle(images_name)
+    if max_num == -1:
+        max_num = len(images_name)
     for i, img_name in enumerate(images_name):
-        if max_num != -1:
-            if i >= max_num:
-                continue
-        deal_one_image(i, len(images_name), img_name, images_data, images_dir_path, divide_size, stride, save_path, dataset)
+        if i >= max_num:
+            continue
+        curr = "{}/{}".format(i, max_num)
+        deal_one_image(curr, img_name, images_data, images_dir_path, divide_size, stride, save_path, dataset)
     if data_name == "coco":
         dataset.save()
     else:
-        dataset.save_label(os.path.join(save_path, "labels.txt"))
+        dataset.save_label()
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='division dataset')
-    parser.add_argument('--data_dir', default='../dataset/project_001/tile_round1', help='dataset path')
-    parser.add_argument('--data_name', default='coco', help='dataset name')
-    parser.add_argument('--save_path', default='../dataset/project_001/tile_round1_divide', help='save_path')
+    parser.add_argument('--data_dir', default='../../dataset/project_001/tile_round1', help='dataset path')
+    parser.add_argument('--data_name', default='voc', help='dataset name')
+    parser.add_argument('--save_seg', action='store_false', help='only data_name is voc. if true, save segmentation')
+    parser.add_argument('--save_path', default='../../dataset/project_001/tile_round1_test', help='save_path')
     parser.add_argument('--divide_size', nargs="+", type=int, default=[128, 128], help='size')
     parser.add_argument('--stride', nargs="+", type=int, default=[120, 120], help='stride')
     parser.add_argument('--max_num', type=int, default=100, help='if -1, save all')
