@@ -10,22 +10,34 @@
 from paddlex.det import transforms
 import paddlex as pdx
 
-
 train_transforms = transforms.Compose([
-    transforms.RandomDistort(), transforms.RandomCrop(),
-    transforms.RandomHorizontalFlip(),
-    # transforms.ResizeByShort(
-    #     short_size=[800], max_size=1333),
-    transforms.Normalize(
-            mean=[0.5], std=[0.5]), transforms.Padding(coarsest_stride=32)
+    transforms.MixupImage(mixup_epoch=250), transforms.RandomDistort(),
+    transforms.RandomExpand(), transforms.RandomCrop(), transforms.Resize(
+        target_size=608, interp='RANDOM'), transforms.RandomHorizontalFlip(),
+    transforms.Normalize()
 ])
 
 eval_transforms = transforms.Compose([
-    # transforms.ResizeByShort(
-    #     short_size=800, max_size=1333),
-    transforms.Normalize(),
-    transforms.Padding(coarsest_stride=32),
+    transforms.Resize(
+        target_size=608, interp='CUBIC'), transforms.Normalize()
 ])
+
+# faster-rcnn
+# train_transforms = transforms.Compose([
+#     transforms.RandomDistort(), transforms.RandomCrop(),
+#     transforms.RandomHorizontalFlip(),
+#     # transforms.ResizeByShort(
+#     #     short_size=[800], max_size=1333),
+#     transforms.Normalize(
+#             mean=[0.5], std=[0.5]), transforms.Padding(coarsest_stride=32)
+# ])
+#
+# eval_transforms = transforms.Compose([
+#     # transforms.ResizeByShort(
+#     #     short_size=800, max_size=1333),
+#     transforms.Normalize(),
+#     transforms.Padding(coarsest_stride=32),
+# ])
 
 
 def get_dataset(root_base):

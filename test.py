@@ -7,24 +7,25 @@
 @Email: 181228331@163.com
 @Date: 2021/1/12
 """
-import torch
-import torch.utils
-import torch.utils.cpp_extension
-from torch.backends import cudnn
+import os
+from utils.common import check_or_make_dir, get_json_data, json_data_to_images_data
 
-# CUDA TEST
-x = torch.Tensor([1.0])
-xx = x.cuda()
-print(xx)
 
-# cudnn test
-print(cudnn.is_acceptable(xx))
+def main():
+    ori_dataset_dir = r"D:\python\competition\dataset\tile_round1_train_20201231"
+    labels_json = check_or_make_dir(ori_dataset_dir, "train_annos.json")
+    labels_data = get_json_data(labels_json)
+    images_data = json_data_to_images_data(labels_data)
+    for i, division_json in enumerate(images_data.keys()):
+        print(i, division_json)
+        image_name = division_json.replace(".json", ".jpg")
+        image_lab_data = images_data[image_name]
+        for box in image_lab_data["bbox"]:
+            w = box[2] - box[0]
+            h = box[3] - box[1]
+            print(w, h, w*h)
 
-print(torch.version.cuda)
-print(torch.utils.cpp_extension.CUDA_HOME)
-
-# https://github.com/pytorch/pytorch/blob/master/torch/utils/cpp_extension.py#L24
 
 if __name__ == "__main__":
     print("vision/test.py")
-    # main()
+    main()

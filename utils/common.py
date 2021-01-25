@@ -11,11 +11,10 @@ import subprocess
 import logging
 
 COLORS = [(0, 0, 255), (0, 255, 0), (255, 0, 0),
-          (0, 255, 255), (255, 0, 255), (255, 255, 0)]
+          (0, 255, 255), (255, 0, 255), (255, 255, 0), (255, 10, 100)]
 
 
 def execute_cmd(cmd):
-    # logging.info(cmd)
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     while p.poll() is None:
         line = p.stdout.readline().decode("utf-8")
@@ -30,10 +29,10 @@ def execute_cmd(cmd):
         return False
 
 
-def show(img, win_name):
+def show(img, win_name="img", wait=0):
     cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
     cv2.imshow(win_name, img)
-    cv2.waitKey(0)
+    cv2.waitKey(wait)
 
 
 def get_json_data(file_path):
@@ -171,7 +170,9 @@ def make_pair(obj):
         raise ValueError(obj)
 
 
-def draw_box(img, boxes, names, scores=(1., )):
+def draw_box(img, boxes, names, scores=None):
+    if scores is None:
+        scores = [1. for _ in range(len(boxes))]
     for i, box in enumerate(boxes):
         p1 = int(box[0]), int(box[1])
         p2 = int(box[2]), int(box[3])
@@ -179,9 +180,174 @@ def draw_box(img, boxes, names, scores=(1., )):
             color = (50, 100, 200)
         else:
             color = COLORS[int(names[i])]
-        cv2.rectangle(img, p1, p2, color, 2)
-        cv2.putText(img, str(names[i]) + " {:.3f}".format(scores[i]), p1, cv2.FONT_HERSHEY_COMPLEX, 2, color, 6)
-    # return img
+        cv2.rectangle(img, p1, p2, color, 1)
+        cv2.putText(img, str(names[i]) + " {:.3f}".format(scores[i]), p1, cv2.FONT_HERSHEY_COMPLEX, 1, color, 1)
+
+
+class CocoData(object):
+    def __init__(self, save_path, class_num=6):
+        self.save_path = save_path
+        self.write_json_context = self.coco_head(class_num)
+        self.image_id = 0
+        self.obj_id = 100000
+
+    def write(self, name, size, boxes, categories, segmentation=None):
+        self.coco_images(name, size)
+        self.coco_annotations(boxes, categories, segmentation)
+        self.image_id += 1
+
+    def coco_head(self, class_num):
+        categories = []
+        for j in range(class_num):
+            categories.append({'id': j + 1, 'name': str(j + 1), 'supercategory': 'None'})
+        write_json_context = dict()
+        write_json_context['info'] = {'description': '', 'url': '', 'version': '', 'year': 2021, 'contributor': '',
+                                      'date_created': '2021-01-15 11:00:08.5'}
+        write_json_context['licenses'] = [{'id': 1, 'name': None, 'url': None}]
+        write_json_context['categories'] = categories
+        write_json_context['images'] = []
+        write_json_context['annotations'] = []
+        return write_json_context
+
+    def coco_images(self, img_name, size):
+        image_context = dict()
+        image_context['file_name'] = img_name
+        image_context['height'] = size[0]
+        image_context['width'] = size[1]
+        image_context['date_captured'] = '2021-01-15 11:00:08.5'
+        # 这么多id搞得我头都懵了,我猜这是第几张图序号吧,每行一张图，那当然就是第i张了
+        image_context['id'] = self.image_id
+        image_context['license'] = 1
+        image_context['coco_url'] = ''
+        image_context['flickr_url'] = ''
+        self.write_json_context["images"].append(image_context)
+
+    def coco_annotations(self, boxes, categories, segmentation=None):
+        image_boxes = []
+        for i, box in enumerate(boxes):
+            bbox_dict = {}
+            # 我就有时候int和str不注意各种报错
+            box = [round(b, 2) for b in box]
+            xmin, ymin, xmax, ymax = box
+            bbox_dict['id'] = self.obj_id
+            bbox_dict['image_id'] = self.image_id
+            bbox_dict['category_id'] = categories[i]
+            bbox_dict['iscrowd'] = 0  # 前面有解释
+            bbox_dict['area'] = round((xmax - xmin) * (ymax - ymin), 3)
+            bbox_dict['bbox'] = box
+            if segmentation is None:
+                bbox_dict['segmentation'] = [[xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax]]
+            else:
+                segmentation[0] = [int(s) for s in segmentation[0]]
+                bbox_dict['segmentation'] = segmentation
+            image_boxes.append(bbox_dict)
+            self.obj_id += 1
+        self.write_json_context["annotations"].extend(image_boxes)
+
+    def __str__(self):
+        for k, v in self.write_json_context.items():
+            print(k, v)
+        return ""
+
+    def save(self):
+        save_path = os.path.join(self.save_path, "ann.json")
+        save_json(save_path, self.write_json_context)
+
+
+class VocData(object):
+    def __init__(self, save_path, save_seg=False):
+        self.save_path = save_path
+        self.categories = []
+        self.save_seg = save_seg
+
+    def write(self, name, size, boxes, categories):
+        save_name = name.replace(".jpg", ".xml")
+        head_xml = self._voc_head(name, size)
+        obj_xml = self._voc_obj(boxes, categories)
+        self.save_xml(save_name, head_xml+obj_xml)
+        if self.save_seg:
+            seg_save_name = name.replace(".jpg", ".png")
+            self.save_segmentation(seg_save_name, size, boxes, categories)
+
+    def _voc_head(self, name, size):
+        xml_head = '''
+        <annotation>
+            <folder>division</folder>
+            <!--文件名-->
+            <filename>{}</filename>
+            <source>
+                <database>tile_round1 Database</database>
+                <annotation>PASCAL tile_round1</annotation>
+                <image>flickr</image>
+                <flickrid>325991873</flickrid>
+            </source>
+            <owner>
+                <flickrid>null</flickrid>
+                <name>null</name>
+            </owner>    
+            <size>
+                <width>{}</width>
+                <height>{}</height>
+                <depth>3</depth>
+            </size>
+            <segmented>0</segmented>
+                    '''.format(name, size[1], size[0])
+        return xml_head
+
+    def _voc_obj(self, boxes, categories):
+        xml_obj = '''
+                <object>        
+                    <name>{}</name>
+                    <pose>Rear</pose>
+                    <truncated>0</truncated>
+                    <difficult>0</difficult>
+                    <bndbox>
+                        <xmin>{}</xmin>
+                        <ymin>{}</ymin>
+                        <xmax>{}</xmax>
+                        <ymax>{}</ymax>
+                    </bndbox>
+                </object>
+                '''
+        body = ""
+        for i, box in enumerate(boxes):
+            # 我就有时候int和str不注意各种报错
+            box = [round(b, 2) for b in box]
+            xmin, ymin, xmax, ymax = box
+            body += xml_obj.format(categories[i], xmin, ymin, xmax, ymax)
+            if categories[i] not in self.categories:
+                self.categories.append(categories[i])
+        body += '''</annotation>'''
+        return body
+
+    def save_xml(self, name, xml):
+        save_path = check_or_make_dir(self.save_path, "Annotations", mkdir=True)
+        if not name.endswith(".xml"):
+            raise ValueError(name)
+        save_path = os.path.join(save_path, name)
+        with open(save_path, 'w') as fw:
+            fw.write(xml)
+
+    def save_segmentation(self, save_name, size, boxes, categories):
+        mask = np.zeros(size, dtype=np.uint8)
+        for i, box in enumerate(boxes):
+            xmin, ymin, xmax, ymax = box
+            contour = np.array([xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax], dtype=np.int).reshape(-1, 2)
+            cv2.drawContours(mask, [contour], 0, 255, -1)
+        save_path = check_or_make_dir(self.save_path, "Segmentation", mkdir=True)
+        save_path = os.path.join(save_path, save_name)
+        cv2.imwrite(save_path, mask)
+
+    def save(self):
+        save_path = os.path.join(self.save_path, "labels.txt")
+        with open(save_path, "w") as fp:
+            for category in self.categories:
+                fp.write(str(category) + "\n")
+        if self.save_seg:
+            seg_save_path = os.path.join(self.save_path, "seg_labels.txt")
+            with open(seg_save_path, "w") as fp:
+                for i in range(2):
+                    fp.write(str(i) + "\n")
 
 
 if __name__ == '__main__':

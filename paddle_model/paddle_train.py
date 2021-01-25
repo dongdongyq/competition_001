@@ -18,18 +18,36 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 def train(args):
     root_base = args.data_dir
     train_dataset, eval_dataset = get_dataset(root_base)
+    # num_classes 需要设置为包含背景类的类别数，即: 目标类别数量
+    num_classes = len(train_dataset.labels)
+    model = pdx.det.PPYOLO(
+        num_classes=num_classes,
+        anchors=[[8, 8], [9, 10], [11, 9], [11, 12], [13, 11], [14, 15],
+                 [20, 18], [41, 30], [90, 98]],
+        nms_topk=300,
+        nms_keep_topk=100)
+    model.train(
+        num_epochs=100,
+        train_dataset=train_dataset,
+        train_batch_size=32,
+        eval_dataset=eval_dataset,
+        learning_rate=0.000125,
+        lr_decay_epochs=[50, 70],
+        save_dir='output/ppyolo',
+        use_vdl=True)
+
+    faster-rcnn
     # num_classes 需要设置为包含背景类的类别数，即: 目标类别数量 + 1
     num_classes = len(train_dataset.labels) + 1
-
     model = pdx.det.FasterRCNN(
         num_classes=num_classes,
         backbone=args.backbone,
+        anchor_sizes=[8, 16, 32, 64, 128],
         with_dcn=True,
         fpn_num_channels=64,
         with_fpn=True,
         test_pre_nms_top_n=500,
         test_post_nms_top_n=300)
-
     model.train(
         num_epochs=100,
         train_dataset=train_dataset,
@@ -42,6 +60,7 @@ def train(args):
         warmup_steps=5000,
         save_dir=args.save_dir,
         use_vdl=True)
+    """
 
 
 def parse_args():

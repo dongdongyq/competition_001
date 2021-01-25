@@ -47,18 +47,18 @@ class MyModel(nn.Module):
         super(MyModel, self).__init__()
         c_in = 3
         c_out = 1
-        encode = [16, 32, 64, 128]
+        encode = [16, 32]
         decode = encode[::-1]
         self.encode_list = nn.ModuleList()
         for c in encode:
             self.encode_list.append(CBABlock(c_in, c, k=1, act=False))
-            self.encode_list.append(CBABlock(c, c, s=2, p=1))
+            self.encode_list.append(CBABlock(c, c, s=1, p=1))
             c_in = c
 
         self.decode_list = nn.ModuleList()
         for c in decode:
-            self.decode_list.append(CTBABlock(c_in, c, k=1, act=False))
-            self.decode_list.append(CTBABlock(c, c, s=2, p=1, op=1))
+            self.decode_list.append(CBABlock(c_in, c, k=1, act=False))
+            self.decode_list.append(CBABlock(c, c, s=1, p=1))
             c_in = c
         self.conv = nn.Conv2d(c_in, c_out, 1, 1)
         self.act = nn.Sigmoid()

@@ -14,14 +14,14 @@ from utils.utils import check_or_make_dir, get_json_data
 
 
 class MyCocoDataset(Dataset):
-    def __init__(self, root_dir, ann_file, transform=None, max_len=None):
+    def __init__(self, root_dir, ann_file, image_dir="images", transform=None, max_len=None):
         """
         Args:
             root_dir (string): Directory with all the images.
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.images_dir = check_or_make_dir(root_dir, "images")
+        self.images_dir = check_or_make_dir(root_dir, image_dir)
         ann_file_path = os.path.join(root_dir, ann_file)
         self.ann_data = get_json_data(ann_file_path)
         self.max_len = max_len
@@ -98,13 +98,13 @@ def make_division(tensor, md=32):
 
 
 def get_transform(train):
-    base_size = 520
+    base_size = 360
     crop_size = 480
 
     min_size = int((0.5 if train else 1.0) * base_size)
     max_size = int((2.0 if train else 1.0) * base_size)
     transforms = list()
-    # transforms.append(T.RandomResize(min_size, max_size))
+    transforms.append(T.RandomResize(min_size, max_size))
     if train:
         transforms.append(T.RandomHorizontalFlip(0.5))
         # transforms.append(T.RandomCrop(crop_size))
@@ -114,9 +114,9 @@ def get_transform(train):
     return T.Compose(transforms)
 
 
-def get_dataloader(root, ann_file, train=True, batch_size=1, max_len=None):
+def get_dataloader(root, ann_file, image_dir="images", train=True, batch_size=1, max_len=None):
     data_transform = get_transform(train)
-    dataset = MyCocoDataset(root_dir=root, ann_file=ann_file, transform=data_transform, max_len=max_len)
+    dataset = MyCocoDataset(root_dir=root, image_dir=image_dir, ann_file=ann_file, transform=data_transform, max_len=max_len)
     dataset_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataset_loader
 
@@ -126,9 +126,9 @@ if __name__ == '__main__':
     import time
     from utils.common import show
     print(int(time.time()))
-    root = r"D:\learnspace\dataset\project_001\tile_round1_divide\coco_size128X128"
+    root = r"D:\learnspace\dataset\project_001\tile_round1"
     ann_file = "val.json"
-    dataloader = get_dataloader(root, ann_file, False)
+    dataloader = get_dataloader(root, ann_file, train=False, image_dir="train_imgs")
     for img, label in dataloader:
         # img = make_division(img)
         # label = make_division(label)

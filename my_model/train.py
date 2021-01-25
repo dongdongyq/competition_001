@@ -14,7 +14,7 @@ import torch.nn as nn
 from torch import optim
 from torch.optim import lr_scheduler
 from my_model.model import MyModel
-from my_model.dataset import get_dataloader
+from my_model.dataset import get_dataloader, make_division
 
 from utils.utils import check_or_make_dir, ConfusionMatrix
 
@@ -39,7 +39,7 @@ def save_output(pred, target, epoch, index, save_path):
     output = np.array(output, dtype=np.uint8)
 
     target = target.detach().numpy()
-    target = target[0, :, :] * 255
+    target = target[0, 0, :, :] * 255
     target = np.array(target, dtype=np.uint8)
     save_img = np.concatenate((output, target), axis=1)
     cv2.imwrite(save_path + "/epoch{:02}_index{:03}.jpg".format(epoch, index), save_img)
@@ -50,6 +50,9 @@ def train_one_epoch(model, device, train_loader, optimizer, epoch, criterion, sa
     pbar = enumerate(train_loader)
     pbar = tqdm(pbar, total=len(train_loader))
     for i, (img, label) in pbar:
+        # img = make_division(img)
+        label = torch.unsqueeze(label, 1)
+        # label = make_division(label)
         img = img.to(device)
         label_mask = label.to(device)
         pred = model(img)
@@ -76,6 +79,9 @@ def evaluate(val_dataset, model, device, epoch, save_dir):
     pbar = enumerate(val_dataset)
     pbar = tqdm(pbar, total=len(val_dataset))
     for i, (img, label) in pbar:
+        # img = make_division(img)
+        label = torch.unsqueeze(label, 1)
+        # label = make_division(label)
         img = img.to(device)
         label_mask = label.to(device)
         pred = model(img)
@@ -119,9 +125,9 @@ def main(opt):
     # criterion = my_criterion
 
     # trainloader
-    root = r"D:\learnspace\dataset\project_001\tile_round1_divide\coco_size128X128"
-    train_loader = get_dataloader(root, "train.json", True, batch_size=1)
-    val_loader = get_dataloader(root, "val.json", False, batch_size=1)
+    root = r"D:\learnspace\dataset\project_001\tile_round1"
+    train_loader = get_dataloader(root, "train.json", train=True, image_dir="train_imgs", batch_size=1)
+    val_loader = get_dataloader(root, "val.json", train=False, image_dir="train_imgs", batch_size=1)
 
     time_int = int(time.time())
     save_dir = check_or_make_dir("../weights", "train_{}".format(time_int), mkdir=True)
